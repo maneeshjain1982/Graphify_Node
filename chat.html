@@ -1,0 +1,737 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Graphify NL Chat — Tizen net-config</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161922;
+    --panel-2: #1d2230;
+    --border: #2a3142;
+    --text: #e6e9ef;
+    --muted: #8a93a6;
+    --accent: #6aa9ff;
+    --accent-2: #8be9c0;
+    --user: #2b3b5c;
+    --bot: #1d2230;
+    --bad: #ff7676;
+    --good: #8be9c0;
+    --infer: #f0b86e;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    grid-template-rows: 56px 1fr;
+    grid-template-areas:
+      "header header"
+      "sidebar main";
+    height: 100vh;
+  }
+  header {
+    grid-area: header;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 0 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  header h1 {
+    font-size: 15px;
+    margin: 0;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+  }
+  header .stats {
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  aside {
+    grid-area: sidebar;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 14px;
+  }
+  aside h2 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    margin: 12px 0 6px;
+  }
+  aside h2:first-child { margin-top: 0; }
+  .example {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 12.5px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s;
+    color: var(--text);
+  }
+  .example:hover { border-color: var(--accent); background: #232a3a; }
+  main {
+    grid-area: main;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .msg {
+    max-width: 78%;
+    padding: 11px 14px;
+    border-radius: 10px;
+    line-height: 1.5;
+    font-size: 13.5px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .msg.user {
+    align-self: flex-end;
+    background: var(--user);
+    border: 1px solid #3a4d75;
+  }
+  .msg.bot {
+    align-self: flex-start;
+    background: var(--bot);
+    border: 1px solid var(--border);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+  }
+  .msg.system {
+    align-self: center;
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--muted);
+    font-size: 12px;
+    max-width: 90%;
+  }
+  .msg .title {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 12px;
+    color: var(--accent);
+    margin-bottom: 6px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  .badge {
+    display: inline-block;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+  .badge.ex { background: rgba(139, 233, 192, 0.15); color: var(--good); }
+  .badge.in { background: rgba(240, 184, 110, 0.18); color: var(--infer); }
+  .row { display: block; }
+  .row .arrow { color: var(--muted); }
+  .row .label { color: var(--text); }
+  .row .file { color: var(--muted); font-size: 11.5px; }
+
+  #composer {
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+    padding: 12px 18px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  #composer input {
+    flex: 1;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    outline: none;
+  }
+  #composer input:focus { border-color: var(--accent); }
+  #composer button {
+    background: var(--accent);
+    color: #0a1020;
+    border: 0;
+    padding: 10px 16px;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  #composer button:hover { background: #8cbcff; }
+
+  #loader {
+    position: fixed; inset: 0;
+    background: rgba(15, 17, 21, 0.95);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 50;
+    flex-direction: column;
+    gap: 16px;
+    padding: 20px;
+    text-align: center;
+  }
+  #loader.hidden { display: none; }
+  #loader h2 { margin: 0 0 4px; font-size: 18px; }
+  #loader p { color: var(--muted); margin: 0; font-size: 13px; max-width: 520px; }
+  #loader .actions { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+  #loader button, #loader label.filebtn {
+    background: var(--accent);
+    color: #0a1020;
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 0;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+  }
+  #loader label.filebtn { display: inline-block; }
+  #loader code {
+    background: #0a1020;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--accent-2);
+  }
+  #loader .err { color: var(--bad); font-size: 12px; max-width: 520px; }
+
+  @media (max-width: 760px) {
+    body { grid-template-columns: 1fr; grid-template-areas: "header" "main"; }
+    aside { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Graphify NL Chat <span style="color:var(--muted);font-weight:400;font-size:12px">· Tizen net-config</span></h1>
+  <div style="display:flex;gap:14px;align-items:center">
+    <label style="font-size:12px;color:var(--muted)">LLM:
+      <select id="provider" style="background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;margin-left:4px;font-size:12px">
+        <option value="local">local (no LLM)</option>
+        <option value="claude">Claude</option>
+        <option value="gemini">Gemini</option>
+        <option value="gauss">Gauss</option>
+      </select>
+    </label>
+    <div class="stats" id="stats">loading…</div>
+  </div>
+</header>
+
+<aside>
+  <h2>Try asking</h2>
+  <div class="example" data-q="stats">stats</div>
+  <div class="example" data-q="god nodes">god nodes</div>
+  <div class="example" data-q="who calls netconfig_invoke_dbus_method">who calls netconfig_invoke_dbus_method</div>
+  <div class="example" data-q="what does __netconfig_wifi_try_to_load_driver do">what does __netconfig_wifi_try_to_load_driver do</div>
+  <div class="example" data-q="path from main to netconfig_invoke_dbus_method">path from main to netconfig_invoke_dbus_method</div>
+  <div class="example" data-q="impact of __netconfig_wifi_load_driver">impact of __netconfig_wifi_load_driver</div>
+  <div class="example" data-q="find driver">find driver</div>
+  <div class="example" data-q="show community 1">show community 1</div>
+
+  <h2>Question shapes</h2>
+  <div style="font-size:11.5px;color:var(--muted);line-height:1.7">
+    find <i>kw</i><br>
+    who calls <i>X</i> · callers of <i>X</i><br>
+    what does <i>X</i> call · callees of <i>X</i><br>
+    explain <i>X</i> · what does <i>X</i> do<br>
+    path from <i>A</i> to <i>B</i><br>
+    impact of <i>X</i> · what breaks if I change <i>X</i><br>
+    community <i>n</i><br>
+    stats · god nodes · help
+  </div>
+</aside>
+
+<main>
+  <div id="messages"></div>
+  <form id="composer" onsubmit="onSubmit(event)">
+    <input id="q" placeholder="Ask about the graph in plain English…" autocomplete="off" autofocus />
+    <button type="submit">Ask</button>
+  </form>
+</main>
+
+<div id="loader">
+  <h2>Loading graph.json…</h2>
+  <p id="loader-msg">If your browser can't fetch the file directly (CORS on <code>file://</code>), pick it manually or serve this folder with a tiny web server.</p>
+  <div class="actions">
+    <label class="filebtn">
+      Choose graph.json
+      <input id="filepick" type="file" accept="application/json,.json" style="display:none" />
+    </label>
+    <button id="retry">Retry fetch</button>
+  </div>
+  <p id="loader-tip" class="err" style="display:none"></p>
+  <p style="font-size:11.5px">Or run <code>py -m http.server 8000</code> in this folder and open <code>http://localhost:8000/chat.html</code></p>
+</div>
+
+<script>
+// ============================================================
+// Data + indexing
+// ============================================================
+let GRAPH = null;
+let NODES = {};       // id -> node
+let OUT = {};         // id -> [[tgt, link]]
+let IN  = {};         // id -> [[src, link]]
+
+function indexGraph(g) {
+  NODES = {};
+  OUT = {};
+  IN = {};
+  for (const n of g.nodes) NODES[n.id] = n;
+  for (const link of g.links) {
+    (OUT[link.source] ||= []).push([link.target, link]);
+    (IN[link.target] ||= []).push([link.source, link]);
+  }
+}
+
+function findNodes(query, codeOnly = false) {
+  let q = query.toLowerCase().trim().replace(/^[`'"]|[`'"]$/g, "").replace(/\(\)$/, "");
+  const hits = [];
+  for (const n of Object.values(NODES)) {
+    if (codeOnly && n.file_type !== "code") continue;
+    const label = n.label.toLowerCase();
+    const labelNorm = label.replace(/\(\)$/, "");
+    if (q === labelNorm || label.includes(q)) hits.push(n);
+  }
+  hits.sort((a, b) => {
+    const aExact = a.label.toLowerCase().replace(/\(\)$/, "") === q ? 0 : 1;
+    const bExact = b.label.toLowerCase().replace(/\(\)$/, "") === q ? 0 : 1;
+    return aExact - bExact || a.label.length - b.label.length;
+  });
+  return hits;
+}
+
+function pickOne(list) { return list.length ? list[0] : null; }
+
+// ============================================================
+// Rendering helpers
+// ============================================================
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function badge(confidence) {
+  const cls = confidence === "EXTRACTED" ? "ex" : "in";
+  return `<span class="badge ${cls}">${confidence}</span>`;
+}
+
+function nodeLine(n, prefix = "") {
+  const loc = `${n.source_file ?? "?"}:${n.source_location ?? "?"}`;
+  return `<span class="row">${prefix}<span class="label">${esc(n.label)}</span>  <span class="file">(${esc(loc)})</span></span>`;
+}
+
+function titleBlock(title, bodyHtml) {
+  return `<div class="title">${esc(title)}</div>${bodyHtml}`;
+}
+
+// ============================================================
+// Answers
+// ============================================================
+function answerStats() {
+  const rel = {}, conf = {}, comm = new Set();
+  for (const l of GRAPH.links) {
+    rel[l.relation] = (rel[l.relation] || 0) + 1;
+    conf[l.confidence] = (conf[l.confidence] || 0) + 1;
+  }
+  for (const n of GRAPH.nodes) comm.add(n.community);
+  return titleBlock("Graph stats",
+    `Nodes:        ${GRAPH.nodes.length}\n` +
+    `Links:        ${GRAPH.links.length}\n` +
+    `Communities:  ${comm.size}\n` +
+    `Relations:    ${JSON.stringify(rel)}\n` +
+    `Confidence:   ${JSON.stringify(conf)}`);
+}
+
+function answerGodNodes(top = 10) {
+  const deg = {};
+  for (const l of GRAPH.links) {
+    deg[l.source] = (deg[l.source] || 0) + 1;
+    deg[l.target] = (deg[l.target] || 0) + 1;
+  }
+  const sorted = Object.entries(deg).sort((a, b) => b[1] - a[1]);
+  const lines = [];
+  let shown = 0;
+  for (const [id, d] of sorted) {
+    const n = NODES[id];
+    if (n.file_type !== "code") continue;
+    lines.push(nodeLine(n, `  <span class="arrow">•</span> ${String(d).padStart(3)} edges  `));
+    if (++shown >= top) break;
+  }
+  return titleBlock(`Top ${top} most-connected nodes`, lines.join("\n"));
+}
+
+function answerFind(q) {
+  const hits = findNodes(q);
+  if (!hits.length) return titleBlock("find", `No nodes match '${esc(q)}'.`);
+  const lines = hits.slice(0, 25).map(n =>
+    nodeLine(n, `  <span class="arrow">•</span> `) +
+    `  <span class="file">[community ${n.community ?? "?"}]</span>`);
+  if (hits.length > 25) lines.push(`  <span class="file">… and ${hits.length - 25} more.</span>`);
+  return titleBlock(`Found ${hits.length} node(s) matching '${q}'`, lines.join("\n"));
+}
+
+function answerCallers(q) {
+  const n = pickOne(findNodes(q, true));
+  if (!n) return titleBlock("callers", `No code node matches '${esc(q)}'.`);
+  const callers = (IN[n.id] || []).filter(([, l]) => l.relation === "calls");
+  if (!callers.length)
+    return titleBlock(`Callers of ${n.label}`, `  <span class="file">(no callers found)</span>`);
+  const lines = callers.map(([sid, l]) => {
+    const s = NODES[sid];
+    return `  <span class="arrow">&lt;--</span> <span class="label">${esc(s.label)}</span> ${badge(l.confidence)}  <span class="file">(${esc(s.source_file ?? "?")})</span>`;
+  });
+  return titleBlock(`Callers of ${n.label}  (${n.source_file ?? "?"}:${n.source_location ?? "?"})`, lines.join("\n"));
+}
+
+function answerCallees(q) {
+  const n = pickOne(findNodes(q, true));
+  if (!n) return titleBlock("callees", `No code node matches '${esc(q)}'.`);
+  const callees = (OUT[n.id] || []).filter(([, l]) => l.relation === "calls");
+  if (!callees.length)
+    return titleBlock(`${n.label} calls:`, `  <span class="file">(no outgoing calls)</span>`);
+  const lines = callees.map(([tid, l]) => {
+    const t = NODES[tid];
+    return `  <span class="arrow">--&gt;</span> <span class="label">${esc(t.label)}</span> ${badge(l.confidence)}  <span class="file">(${esc(t.source_file ?? "?")})</span>`;
+  });
+  return titleBlock(`${n.label} calls:`, lines.join("\n"));
+}
+
+function answerExplain(q) {
+  const n = pickOne(findNodes(q, true));
+  if (!n) return titleBlock("explain", `No code node matches '${esc(q)}'.`);
+  const out = OUT[n.id] || [], inn = IN[n.id] || [];
+  const lines = [
+    `  Source:    <span class="file">${esc(n.source_file ?? "?")} ${esc(n.source_location ?? "")}</span>`,
+    `  Community: ${n.community ?? "?"}`,
+    `  Degree:    ${out.length + inn.length}  (${out.length} out, ${inn.length} in)`,
+    "",
+    "  Connections:"
+  ];
+  for (const [tid, l] of out) {
+    const t = NODES[tid];
+    lines.push(`    <span class="arrow">--&gt;</span> <span class="label">${esc(t.label)}</span>  <span class="file">[${l.relation}]</span> ${badge(l.confidence)}`);
+  }
+  for (const [sid, l] of inn) {
+    const s = NODES[sid];
+    lines.push(`    <span class="arrow">&lt;--</span> <span class="label">${esc(s.label)}</span>  <span class="file">[${l.relation}]</span> ${badge(l.confidence)}`);
+  }
+  return titleBlock(n.label, lines.join("\n"));
+}
+
+function answerPath(aQ, bQ) {
+  const a = pickOne(findNodes(aQ, true));
+  const b = pickOne(findNodes(bQ, true));
+  if (!a) return titleBlock("path", `No code node matches source '${esc(aQ)}'.`);
+  if (!b) return titleBlock("path", `No code node matches target '${esc(bQ)}'.`);
+  const visited = new Map([[a.id, null]]);
+  const edgeUsed = new Map();
+  const queue = [a.id];
+  let found = false;
+  while (queue.length) {
+    const cur = queue.shift();
+    if (cur === b.id) { found = true; break; }
+    for (const [t, l] of (OUT[cur] || [])) {
+      if (!visited.has(t)) { visited.set(t, cur); edgeUsed.set(t, [l, "out"]); queue.push(t); }
+    }
+    for (const [s, l] of (IN[cur] || [])) {
+      if (!visited.has(s)) { visited.set(s, cur); edgeUsed.set(s, [l, "in"]); queue.push(s); }
+    }
+  }
+  if (!found) return titleBlock("path", `No path found between ${esc(a.label)} and ${esc(b.label)}.`);
+  const path = [];
+  for (let cur = b.id; cur !== null; cur = visited.get(cur)) path.push(cur);
+  path.reverse();
+  const lines = [];
+  for (let i = 1; i < path.length; i++) {
+    const [link, dir] = edgeUsed.get(path[i]);
+    const arrow = dir === "out"
+      ? `<span class="arrow">--${link.relation}--&gt;</span>`
+      : `<span class="arrow">&lt;--${link.relation}--</span>`;
+    lines.push(`  <span class="label">${esc(NODES[path[i-1]].label)}</span>  ${arrow}  <span class="label">${esc(NODES[path[i]].label)}</span>  ${badge(link.confidence)}`);
+  }
+  return titleBlock(`Shortest path (${path.length - 1} hops): ${a.label}  →  ${b.label}`, lines.join("\n"));
+}
+
+function answerImpact(q, hops = 2) {
+  const n = pickOne(findNodes(q, true));
+  if (!n) return titleBlock("impact", `No code node matches '${esc(q)}'.`);
+  const visited = new Map([[n.id, 0]]);
+  let frontier = [n.id];
+  for (let d = 1; d <= hops; d++) {
+    const next = [];
+    for (const nid of frontier) {
+      for (const [sid, l] of (IN[nid] || [])) {
+        if (l.relation !== "calls") continue;
+        if (!visited.has(sid)) { visited.set(sid, d); next.push(sid); }
+      }
+    }
+    frontier = next;
+  }
+  const byDepth = {};
+  for (const [nid, d] of visited) if (d > 0) (byDepth[d] ||= []).push(NODES[nid]);
+  const lines = [];
+  if (!Object.keys(byDepth).length) lines.push("  <span class='file'>(no transitive callers found)</span>");
+  for (const d of Object.keys(byDepth).sort()) {
+    lines.push(`  ${d}-hop callers (${byDepth[d].length}):`);
+    for (const x of byDepth[d])
+      lines.push(`    <span class="arrow">•</span> <span class="label">${esc(x.label)}</span>  <span class="file">(${esc(x.source_file ?? "?")})</span>`);
+  }
+  const comm = {};
+  for (const [nid] of visited) if (nid !== n.id) {
+    const c = NODES[nid].community;
+    comm[c] = (comm[c] || 0) + 1;
+  }
+  if (Object.keys(comm).length) lines.push(`  <span class="file">Affected communities: ${JSON.stringify(comm)}</span>`);
+  return titleBlock(`Impact analysis — what breaks if ${n.label} changes?`, lines.join("\n"));
+}
+
+function answerCommunity(idStr) {
+  const id = parseInt(idStr, 10);
+  if (isNaN(id)) return titleBlock("community", `Community id must be a number.`);
+  const members = GRAPH.nodes.filter(n => n.community === id);
+  if (!members.length) return titleBlock("community", `No nodes in community ${id}.`);
+  const code = members.filter(n => n.file_type === "code");
+  const files = members.filter(n => n.file_type !== "code");
+  const lines = [];
+  if (files.length) {
+    lines.push("  Files:");
+    for (const n of files) lines.push(`    <span class="arrow">•</span> <span class="label">${esc(n.label)}</span>`);
+  }
+  if (code.length) {
+    lines.push("  Functions:");
+    for (const n of code.slice(0, 80))
+      lines.push(`    <span class="arrow">•</span> <span class="label">${esc(n.label)}</span>  <span class="file">(${esc(n.source_file ?? "?")}:${esc(n.source_location ?? "?")})</span>`);
+    if (code.length > 80) lines.push(`    <span class="file">… and ${code.length - 80} more.</span>`);
+  }
+  return titleBlock(`Community ${id} — ${members.length} nodes`, lines.join("\n"));
+}
+
+function answerHelp() {
+  return titleBlock("help",
+    "Ask in plain English. Examples:\n" +
+    "  find <kw>                      — substring search\n" +
+    "  who calls X                    — direct callers\n" +
+    "  what does X call               — direct callees\n" +
+    "  explain X / what does X do     — full neighborhood\n" +
+    "  path from A to B               — shortest path\n" +
+    "  impact of X                    — 2-hop transitive callers\n" +
+    "  community N                    — list a cluster\n" +
+    "  stats · god nodes · help");
+}
+
+// ============================================================
+// NL intent routing (mirrors chat.py)
+// ============================================================
+const INTENTS = [
+  ["path",       /^(?:show\s+)?(?:the\s+)?(?:shortest\s+)?path\s+(?:from\s+)?(.+?)\s+(?:to|->|=>)\s+(.+?)\s*\??$/i, m => answerPath(m[1], m[2])],
+  ["path",       /^how\s+(?:does|do|can)\s+(.+?)\s+(?:reach|get\s+to|connect\s+to)\s+(.+?)\s*\??$/i, m => answerPath(m[1], m[2])],
+
+  ["impact",     /^(?:impact|blast\s*radius)\s+(?:of|for)\s+(?:changing\s+)?(.+?)\s*\??$/i, m => answerImpact(m[1])],
+  ["impact",     /^what\s+(?:breaks|would\s+break|happens)\s+if\s+(?:i\s+)?(?:change|modify|edit|touch|refactor)\s+(.+?)\s*\??$/i, m => answerImpact(m[1])],
+
+  ["callers",    /^(?:who|what)\s+calls\s+(?:into\s+)?(.+?)\s*\??$/i, m => answerCallers(m[1])],
+  ["callers",    /^callers\s+(?:of|for)\s+(.+?)\s*\??$/i, m => answerCallers(m[1])],
+  ["callers",    /^(?:list|show|find)\s+callers\s+(?:of\s+)?(.+?)\s*\??$/i, m => answerCallers(m[1])],
+
+  ["callees",    /^what\s+does\s+(.+?)\s+call\s*\??$/i, m => answerCallees(m[1])],
+  ["callees",    /^callees\s+(?:of|for)\s+(.+?)\s*\??$/i, m => answerCallees(m[1])],
+  ["callees",    /^(?:list|show|find)\s+callees\s+(?:of\s+)?(.+?)\s*\??$/i, m => answerCallees(m[1])],
+
+  ["explain",    /^(?:explain|describe|tell\s+me\s+about)\s+(.+?)\s*\??$/i, m => answerExplain(m[1])],
+  ["explain",    /^what\s+does\s+(.+?)\s+do\s*\??$/i, m => answerExplain(m[1])],
+  ["explain",    /^(?:show|info|details)\s+(?:on|for|about)\s+(.+?)\s*\??$/i, m => answerExplain(m[1])],
+
+  ["community",  /^(?:show\s+|list\s+|what(?:'s|\s+is)\s+in\s+)?community\s+(\d+)\s*\??$/i, m => answerCommunity(m[1])],
+
+  ["find",       /^(?:find|search(?:\s+for)?|look\s+(?:up|for))\s+(.+?)\s*\??$/i, m => answerFind(m[1])],
+  ["find",       /^(?:any|which|what)\s+(?:nodes?|functions?|files?)\s+(?:match|contain|have)\s+(.+?)\s*\??$/i, m => answerFind(m[1])],
+
+  ["god",        /^(?:god\s+nodes|most\s+connected|hubs|hottest\s+(?:functions|nodes))\s*\??$/i, () => answerGodNodes()],
+  ["stats",      /^(?:stats|statistics|summary|overview|how\s+big\s+is\s+the\s+graph)\s*\??$/i, () => answerStats()],
+  ["help",       /^(?:help|\?|commands|what\s+can\s+(?:you|i)\s+do)\s*\??$/i, () => answerHelp()],
+];
+
+function route(question) {
+  const q = question.trim();
+  if (!q) return null;
+  for (const [, pat, fn] of INTENTS) {
+    const m = q.match(pat);
+    if (m) return fn(m);
+  }
+  if (/[A-Za-z_]{3,}/.test(q))
+    return answerFind(q) + `\n\n<span class="file">(Try 'help' to see supported question shapes.)</span>`;
+  return titleBlock("?", `I didn't understand that. Type 'help' for examples.`);
+}
+
+// ============================================================
+// UI plumbing
+// ============================================================
+const messagesEl = document.getElementById("messages");
+const inputEl = document.getElementById("q");
+
+function addMsg(text, who = "bot", isHtml = false) {
+  const div = document.createElement("div");
+  div.className = `msg ${who}`;
+  if (isHtml) div.innerHTML = text;
+  else div.textContent = text;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+const providerEl = document.getElementById("provider");
+const chatHistory = []; // [{role:'user'|'assistant', content:'...'}]
+
+async function askLLM(question) {
+  const provider = providerEl.value;
+  const thinking = document.createElement("div");
+  thinking.className = "msg bot";
+  thinking.innerHTML = `<div class="title">${provider}</div><span class="file">thinking…</span>`;
+  messagesEl.appendChild(thinking);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  try {
+    const res = await fetch("/ask", {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify({provider, question, history: chatHistory}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    thinking.remove();
+    const text = data.answer || "(empty response)";
+    chatHistory.push({role: "user", content: question});
+    chatHistory.push({role: "assistant", content: text});
+    addMsg(`<div class="title">${provider}</div>${renderMarkdownLite(text)}`, "bot", true);
+  } catch (err) {
+    thinking.remove();
+    const msg = String(err.message || err);
+    let hint = "";
+    if (msg.includes("Failed to fetch") || msg.includes("NetworkError"))
+      hint = `\n\nIs the backend running? Start it with:  py server.py  and open this page via http://localhost:8765/chat.html`;
+    else if (msg.includes("not set") || msg.includes("must be set"))
+      hint = `\n\nSet the API key in your shell and restart the server, e.g.:  $env:ANTHROPIC_API_KEY = "sk-ant-..."`;
+    addMsg(`<div class="title" style="color:var(--bad)">error</div>${esc(msg)}${esc(hint)}`, "bot", true);
+  }
+}
+
+function renderMarkdownLite(text) {
+  // Minimal markdown: code spans, bold, line breaks, simple bullets.
+  let html = esc(text)
+    .replace(/`([^`]+)`/g, '<code style="background:#0a1020;padding:1px 5px;border-radius:4px;color:var(--accent-2)">$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+    .replace(/^- (.+)$/gm, '  <span class="row"><span class="arrow">•</span> $1</span>');
+  return `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:13px;line-height:1.55;white-space:pre-wrap">${html}</div>`;
+}
+
+function onSubmit(e) {
+  e.preventDefault();
+  const q = inputEl.value.trim();
+  if (!q || !GRAPH) return;
+  addMsg(q, "user");
+  inputEl.value = "";
+
+  // If user picked an LLM provider, always go through it (richer answers).
+  if (providerEl.value !== "local") {
+    askLLM(q);
+    return;
+  }
+  const reply = route(q);
+  if (reply) addMsg(reply, "bot", true);
+}
+
+document.querySelectorAll(".example").forEach(el => {
+  el.addEventListener("click", () => {
+    inputEl.value = el.dataset.q;
+    inputEl.focus();
+    document.getElementById("composer").requestSubmit();
+  });
+});
+
+// ============================================================
+// Graph loading (fetch, with file-picker fallback)
+// ============================================================
+const loader = document.getElementById("loader");
+const loaderTip = document.getElementById("loader-tip");
+const statsEl = document.getElementById("stats");
+
+function onGraphReady(g) {
+  GRAPH = g;
+  indexGraph(g);
+  loader.classList.add("hidden");
+  statsEl.textContent = `${g.nodes.length} nodes · ${g.links.length} links`;
+  addMsg(
+    `Loaded ${g.nodes.length} nodes and ${g.links.length} links.\nAsk about the graph in plain English — try the suggestions on the left.`,
+    "system"
+  );
+}
+
+async function tryFetch() {
+  loaderTip.style.display = "none";
+  try {
+    const res = await fetch("graph.json", { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const g = await res.json();
+    onGraphReady(g);
+  } catch (err) {
+    loaderTip.style.display = "block";
+    loaderTip.textContent =
+      `Auto-load failed (${err.message}). This is normal when opening the file directly — use "Choose graph.json" below, or start a local server.`;
+  }
+}
+
+document.getElementById("filepick").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  try {
+    const text = await f.text();
+    onGraphReady(JSON.parse(text));
+  } catch (err) {
+    loaderTip.style.display = "block";
+    loaderTip.textContent = `Failed to parse: ${err.message}`;
+  }
+});
+document.getElementById("retry").addEventListener("click", tryFetch);
+
+tryFetch();
+
+// Discover which LLM providers the backend has keys for, and mark the others disabled.
+(async () => {
+  try {
+    const res = await fetch("/providers");
+    if (!res.ok) return;
+    const data = await res.json();
+    const provs = data.providers || {};
+    for (const opt of providerEl.options) {
+      if (opt.value === "local") continue;
+      if (!provs[opt.value]) {
+        opt.disabled = true;
+        opt.textContent = opt.textContent + " (no key)";
+      }
+    }
+    // Auto-pick the first available one
+    const firstAvail = ["claude", "gemini", "gauss"].find(p => provs[p]);
+    if (firstAvail) providerEl.value = firstAvail;
+  } catch (_) {
+    // Backend not reachable — stay in local mode.
+  }
+})();
+</script>
+</body>
+</html>

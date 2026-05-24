@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Debug: WiFi connect hang after airplane mode — net-config</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161922;
+    --panel-2: #1d2230;
+    --border: #2a3142;
+    --text: #e6e9ef;
+    --muted: #8a93a6;
+    --accent: #6aa9ff;
+    --accent-2: #8be9c0;
+    --bad: #ff7676;
+    --warn: #f0b86e;
+    --ok: #8be9c0;
+    --hi: #ffd866;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--text);
+    display: grid;
+    grid-template-columns: 420px 1fr 380px;
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      "hdr hdr hdr"
+      "log graph analysis";
+    height: 100vh;
+  }
+  header {
+    grid-area: hdr;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 18px;
+  }
+  header h1 { margin: 0; font-size: 15px; font-weight: 600; }
+  header .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  header .nav { float: right; font-size: 12px; }
+  header .nav a { color: var(--accent); text-decoration: none; margin-left: 10px; }
+  header .nav a:hover { text-decoration: underline; }
+  .panel { padding: 14px; overflow-y: auto; border-right: 1px solid var(--border); }
+  .panel:last-child { border-right: 0; }
+  h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--muted); margin: 0 0 8px;
+  }
+  h2:not(:first-child) { margin-top: 18px; }
+
+  /* === LOG PANEL === */
+  #log { grid-area: log; background: var(--panel); }
+  .logline {
+    font-family: ui-monospace, Consolas, Menlo, monospace;
+    font-size: 12px;
+    padding: 5px 8px;
+    margin-bottom: 2px;
+    border-radius: 4px;
+    border-left: 3px solid transparent;
+    cursor: pointer;
+    line-height: 1.4;
+    background: var(--panel-2);
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .logline:hover { background: #232a3a; }
+  .logline.active { background: #3a2e1a; border-left-color: var(--hi); }
+  .logline .ts { color: var(--muted); }
+  .logline .lvl { display: inline-block; width: 16px; font-weight: 700; }
+  .logline .lvl.D { color: var(--muted); }
+  .logline .lvl.W { color: var(--warn); }
+  .logline .lvl.E { color: var(--bad); }
+  .logline .fn { color: var(--accent-2); }
+
+  /* === GRAPH PANEL === */
+  #graph { grid-area: graph; background: var(--bg); position: relative; padding: 14px; overflow: auto; }
+  svg { width: 100%; height: 100%; min-height: 600px; display: block; }
+  .node-rect {
+    fill: var(--panel-2);
+    stroke: var(--border);
+    stroke-width: 1.5;
+    rx: 8; ry: 8;
+    transition: fill 0.15s, stroke 0.15s;
+  }
+  .node-rect.suspect { stroke: var(--bad); stroke-width: 2.5; fill: #2a1818; }
+  .node-rect.warning { stroke: var(--warn); stroke-width: 2; fill: #2a2418; }
+  .node-rect.entry   { stroke: var(--accent); stroke-width: 2; fill: #1a2434; }
+  .node-rect.normal  { stroke: var(--border); fill: var(--panel-2); }
+  .node-rect.active  { stroke: var(--hi); stroke-width: 3; }
+  .node-label {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 11px;
+    fill: var(--text);
+    pointer-events: none;
+  }
+  .node-sub {
+    font-size: 10px;
+    fill: var(--muted);
+    pointer-events: none;
+  }
+  .edge {
+    fill: none; stroke: #4a5470; stroke-width: 1.5;
+    marker-end: url(#arrow);
+    transition: stroke 0.15s, stroke-width 0.15s;
+  }
+  .edge.calls-extracted { stroke: var(--ok); }
+  .edge.calls-inferred  { stroke: var(--warn); stroke-dasharray: 4,3; }
+  .edge.active { stroke: var(--hi); stroke-width: 2.5; }
+  .edge-label {
+    font-size: 9px;
+    fill: var(--muted);
+    pointer-events: none;
+  }
+  .legend {
+    position: absolute; top: 18px; right: 18px;
+    background: var(--panel); padding: 10px 12px;
+    border-radius: 6px; border: 1px solid var(--border);
+    font-size: 11px; line-height: 1.7;
+  }
+  .legend .sw {
+    display: inline-block; width: 14px; height: 6px;
+    border-radius: 2px; margin-right: 6px; vertical-align: middle;
+  }
+
+  /* === ANALYSIS PANEL === */
+  #analysis { grid-area: analysis; background: var(--panel); }
+  .box {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+  .box.bad  { border-left-color: var(--bad); }
+  .box.warn { border-left-color: var(--warn); }
+  .box.ok   { border-left-color: var(--ok); }
+  .box code {
+    background: #0a1020;
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: var(--accent-2);
+    font-size: 11.5px;
+  }
+  .box b { color: var(--text); }
+  .box .step {
+    display: block; font-size: 11px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.6px;
+    margin-bottom: 4px;
+  }
+  .pill {
+    display: inline-block; font-size: 10px;
+    padding: 2px 7px; border-radius: 4px;
+    background: rgba(106, 169, 255, 0.15); color: var(--accent);
+    margin-left: 4px; vertical-align: middle;
+  }
+  .pill.bad  { background: rgba(255, 118, 118, 0.18); color: var(--bad); }
+  .pill.warn { background: rgba(240, 184, 110, 0.18); color: var(--warn); }
+  .pill.ok   { background: rgba(139, 233, 192, 0.18); color: var(--ok); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="nav">
+    <a href="chat.html">← NL chat</a>
+    <a href="graph.html">full graph viz →</a>
+  </div>
+  <h1>Debug demo: WiFi connect hang after airplane-mode toggle</h1>
+  <div class="sub">
+    Synthetic scenario · click any log line to see the responsible function in the graph ·
+    suspect highlighted in <span style="color:var(--bad)">red</span>,
+    warnings in <span style="color:var(--warn)">orange</span>,
+    entry point in <span style="color:var(--accent)">blue</span>.
+  </div>
+</header>
+
+<!-- ============ LOG ============ -->
+<section id="log" class="panel">
+  <h2>dlogutil net-config (synthetic)</h2>
+  <div id="lines"></div>
+  <h2>What the user reported</h2>
+  <div class="box">
+    "After I toggle airplane mode off, WiFi takes ~30 s to come back and sometimes shows
+    a connect failure. Happens on ~1 in 5 toggles. Reboot fixes it temporarily."
+  </div>
+</section>
+
+<!-- ============ GRAPH ============ -->
+<section id="graph">
+  <svg id="svg" viewBox="0 0 900 720" preserveAspectRatio="xMidYMid meet">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#4a5470"/>
+      </marker>
+    </defs>
+    <g id="edges"></g>
+    <g id="nodes"></g>
+  </svg>
+  <div class="legend">
+    <div><span class="sw" style="background:var(--ok)"></span>calls (EXTRACTED, high confidence)</div>
+    <div><span class="sw" style="background:var(--warn);border:1px dashed #fff3"></span>calls (INFERRED, heuristic)</div>
+    <div style="margin-top:6px"><span class="sw" style="background:#1a2434;border:1px solid var(--accent)"></span>entry point</div>
+    <div><span class="sw" style="background:#2a2418;border:1px solid var(--warn)"></span>warning logged</div>
+    <div><span class="sw" style="background:#2a1818;border:1px solid var(--bad)"></span>error / suspect</div>
+  </div>
+</section>
+
+<!-- ============ ANALYSIS ============ -->
+<aside id="analysis" class="panel">
+  <h2>Root-cause hypothesis</h2>
+  <div class="box bad">
+    <span class="step">suspect</span>
+    <b><code>__netconfig_wifi_enable_technology</code></b> calls
+    <code>netconfig_invoke_dbus_method</code> with a synchronous
+    <code>g_dbus_proxy_call_sync</code> and <b>no timeout argument</b>.
+    When ConnMan is still racing to recognize the freshly-loaded driver,
+    that sync call blocks the main loop for ~30 s (GIO's default).
+  </div>
+
+  <h2>Evidence trail</h2>
+  <div class="box">
+    <span class="step">1 · entry</span>
+    <code>__netconfig_wifi_airplane_mode</code> fires when airplane mode flips off
+    (degree 3, community 0). Calls <code>__netconfig_wifi_try_to_load_driver</code>.
+  </div>
+  <div class="box">
+    <span class="step">2 · interlock checks pass</span>
+    Tethering off, wifi-direct off → control reaches
+    <code>__netconfig_wifi_load_driver</code>.
+  </div>
+  <div class="box warn">
+    <span class="step">3 · race condition</span>
+    Kernel module loads (insmod returns) but <code>wlan0</code> hasn't been
+    enumerated by ConnMan yet.
+  </div>
+  <div class="box bad">
+    <span class="step">4 · the hang</span>
+    <code>__netconfig_wifi_enable_technology</code> issues a sync D-Bus call
+    via <code>netconfig_invoke_dbus_method</code>. ConnMan can't reply → main loop blocks.
+  </div>
+  <div class="box">
+    <span class="step">5 · timeout cascade</span>
+    Outer timer fires <code>__netconfig_wifi_try_to_remove_driver</code> → driver
+    yanked → next toggle has to redo everything.
+  </div>
+
+  <h2>Why the graph caught this fast</h2>
+  <div class="box ok">
+    One query showed three of the four functions in the log are
+    in <b>community 0</b> (WiFi driver lifecycle, 27 nodes) and that
+    <code>netconfig_invoke_dbus_method</code> is the <b>only</b> path out
+    to ConnMan (degree 9) — so any hang involving ConnMan necessarily
+    funnels through it. That's the choke point to patch.
+  </div>
+
+  <h2>Suggested fix area</h2>
+  <div class="box">
+    <span class="step">option A — narrow</span>
+    Patch <code>netconfig_invoke_dbus_method</code> to use
+    <code>g_dbus_proxy_call</code> (async) with a 3 s timeout +
+    completion callback. <span class="pill warn">blast radius: 7 callers</span>
+  </div>
+  <div class="box">
+    <span class="step">option B — surgical</span>
+    Add a "wait for wlan0 to appear on ConnMan" pre-step in
+    <code>__netconfig_wifi_try_to_load_driver</code> before invoking
+    enable_technology. <span class="pill ok">blast radius: 1 caller</span>
+  </div>
+  <div class="box">
+    <span class="step">option C — defensive</span>
+    Wrap the sync call but cap the GIO default timeout via
+    <code>g_dbus_proxy_set_default_timeout(proxy, 3000)</code> during init.
+    <span class="pill ok">blast radius: 0 (init-time only)</span>
+  </div>
+
+  <h2>What still needs verification</h2>
+  <div class="box warn">
+    The edge <code>__netconfig_wifi_enable_technology → netconfig_invoke_dbus_method</code>
+    is <b>INFERRED</b> (heuristic), not AST-confirmed. <b>Verify by grep before patching</b>.
+    Likewise the airplane-mode → load-driver edge is EXTRACTED ✓ — that one's safe to trust.
+  </div>
+</aside>
+
+<script>
+// ============================================================
+// Synthetic log
+// ============================================================
+const LOGS = [
+  {ts:"14:32:01.123", lvl:"D", fn:"__netconfig_wifi_airplane_mode",        msg:"airplane mode disabled, triggering wifi reload"},
+  {ts:"14:32:01.124", lvl:"D", fn:"__netconfig_wifi_try_to_load_driver",   msg:"checking preconditions"},
+  {ts:"14:32:01.125", lvl:"D", fn:"netconfig_is_wifi_tethering_on",        msg:"-> false"},
+  {ts:"14:32:01.126", lvl:"D", fn:"netconfig_is_wifi_direct_on",           msg:"-> false"},
+  {ts:"14:32:01.127", lvl:"D", fn:"__netconfig_wifi_load_driver",          msg:"calling insmod /lib/modules/.../wlan.ko"},
+  {ts:"14:32:01.388", lvl:"D", fn:"__netconfig_wifi_load_driver",          msg:"insmod returned 0"},
+  {ts:"14:32:01.389", lvl:"D", fn:"__netconfig_wifi_enable_technology",    msg:"calling connman SetProperty Powered=true"},
+  {ts:"14:32:01.390", lvl:"D", fn:"netconfig_invoke_dbus_method",          msg:"g_dbus_proxy_call_sync (no timeout)"},
+  {ts:"14:32:11.234", lvl:"W", fn:"__netconfig_wifi_load_driver",          msg:"interface wlan0 not yet visible to connman"},
+  {ts:"14:32:31.391", lvl:"E", fn:"netconfig_invoke_dbus_method",          msg:"g_dbus_proxy_call_sync returned NULL (Timeout)"},
+  {ts:"14:32:31.392", lvl:"E", fn:"__netconfig_wifi_enable_technology",    msg:"failed to set Powered=true on connman wifi tech"},
+  {ts:"14:32:31.393", lvl:"W", fn:"__netconfig_wifi_try_to_load_driver",   msg:"enable_technology failed, scheduling try_to_remove_driver"},
+  {ts:"14:32:31.500", lvl:"D", fn:"__netconfig_wifi_try_to_remove_driver", msg:"cleaning up after failed load"},
+];
+
+const linesEl = document.getElementById("lines");
+LOGS.forEach((row, i) => {
+  const div = document.createElement("div");
+  div.className = "logline";
+  div.dataset.fn = row.fn;
+  div.dataset.idx = i;
+  div.innerHTML = `<span class="ts">${row.ts}</span> <span class="lvl ${row.lvl}">${row.lvl}</span> <span class="fn">${row.fn}</span> ${escapeHtml(row.msg)}`;
+  div.addEventListener("click", () => activateLog(i));
+  linesEl.appendChild(div);
+});
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+// ============================================================
+// Graph nodes (positioned by hand — small, illustrative)
+// Data mirrors the actual graph.json subset for community 0 + the D-Bus invoker.
+// ============================================================
+const NODES = [
+  {id:"airplane",  x:60,  y:60,  label:"__netconfig_wifi_airplane_mode()",        file:"src/wifi-power.c:L201",        kind:"entry"},
+  {id:"try_load",  x:340, y:60,  label:"__netconfig_wifi_try_to_load_driver()",   file:"src/wifi-power.c:L278",        kind:"warning"},
+  {id:"iface_load",x:60,  y:180, label:"netconfig_iface_wifi_load_driver()",      file:"src/wifi-power.c:L401",        kind:"entry"},
+  {id:"airmode_2", x:60,  y:140, label:"__netconfig_wifi_power_configuration()",  file:"src/wifi-power.c:L321",        kind:"entry"},
+  {id:"teth_chk",  x:340, y:180, label:"netconfig_is_wifi_tethering_on()",        file:"src/wifi-tethering.c",          kind:"normal"},
+  {id:"direct_chk",x:340, y:240, label:"netconfig_is_wifi_direct_on()",           file:"src/wifi-direct.c",             kind:"normal"},
+  {id:"load_drv",  x:640, y:60,  label:"__netconfig_wifi_load_driver()",          file:"src/wifi-power.c:L233",        kind:"warning"},
+  {id:"enable",    x:640, y:180, label:"__netconfig_wifi_enable_technology()",    file:"src/wifi-power.c:L156",        kind:"suspect"},
+  {id:"dbus",      x:640, y:320, label:"netconfig_invoke_dbus_method()",          file:"src/dbus/netdbus.c:L119",      kind:"suspect"},
+  {id:"remove",    x:340, y:380, label:"__netconfig_wifi_try_to_remove_driver()", file:"src/wifi-power.c:L344",        kind:"warning"},
+  {id:"update_ps", x:340, y:460, label:"netconfig_wifi_update_power_state()",     file:"src/wifi-power.c:L98",         kind:"normal"},
+];
+
+// Edges from this graph (real edges, confidence preserved)
+const EDGES = [
+  {from:"airplane",   to:"try_load", conf:"EXTRACTED"},
+  {from:"airmode_2",  to:"try_load", conf:"EXTRACTED"},
+  {from:"iface_load", to:"try_load", conf:"EXTRACTED"},
+  {from:"try_load",   to:"teth_chk", conf:"INFERRED"},
+  {from:"try_load",   to:"direct_chk", conf:"INFERRED"},
+  {from:"try_load",   to:"load_drv", conf:"EXTRACTED"},
+  {from:"try_load",   to:"enable",   conf:"EXTRACTED"},
+  {from:"try_load",   to:"remove",   conf:"EXTRACTED"},
+  {from:"try_load",   to:"update_ps", conf:"INFERRED"},
+  {from:"enable",     to:"dbus",     conf:"INFERRED"},
+  {from:"load_drv",   to:"enable",   conf:"INFERRED"},
+];
+
+// Which graph node belongs to which log line (for the click highlight).
+const LOG_TO_NODE = {
+  "__netconfig_wifi_airplane_mode":        "airplane",
+  "__netconfig_wifi_try_to_load_driver":   "try_load",
+  "netconfig_is_wifi_tethering_on":        "teth_chk",
+  "netconfig_is_wifi_direct_on":           "direct_chk",
+  "__netconfig_wifi_load_driver":          "load_drv",
+  "__netconfig_wifi_enable_technology":    "enable",
+  "netconfig_invoke_dbus_method":          "dbus",
+  "__netconfig_wifi_try_to_remove_driver": "remove",
+};
+
+// ============================================================
+// Render SVG
+// ============================================================
+const NODE_W = 240, NODE_H = 46;
+const svg = document.getElementById("svg");
+const gNodes = document.getElementById("nodes");
+const gEdges = document.getElementById("edges");
+
+function nodeCenter(n) { return [n.x + NODE_W/2, n.y + NODE_H/2]; }
+
+EDGES.forEach((e, i) => {
+  const a = NODES.find(n => n.id === e.from);
+  const b = NODES.find(n => n.id === e.to);
+  const [x1, y1] = nodeCenter(a);
+  const [x2, y2] = nodeCenter(b);
+  // Curve a little
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+  const dx = x2 - x1, dy = y2 - y1;
+  const norm = Math.sqrt(dx*dx + dy*dy) || 1;
+  const off = 12 * (i % 2 === 0 ? 1 : -1);
+  const cx = mx - dy/norm * off, cy = my + dx/norm * off;
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`);
+  path.setAttribute("class", `edge calls-${e.conf.toLowerCase()}`);
+  path.dataset.from = e.from;
+  path.dataset.to = e.to;
+  gEdges.appendChild(path);
+});
+
+NODES.forEach(n => {
+  const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  g.dataset.id = n.id;
+  const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  rect.setAttribute("x", n.x);
+  rect.setAttribute("y", n.y);
+  rect.setAttribute("width", NODE_W);
+  rect.setAttribute("height", NODE_H);
+  rect.setAttribute("class", `node-rect ${n.kind}`);
+  g.appendChild(rect);
+  const lbl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  lbl.setAttribute("x", n.x + 10);
+  lbl.setAttribute("y", n.y + 19);
+  lbl.setAttribute("class", "node-label");
+  lbl.textContent = n.label.length > 32 ? n.label.slice(0, 30) + "…" : n.label;
+  g.appendChild(lbl);
+  const sub = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  sub.setAttribute("x", n.x + 10);
+  sub.setAttribute("y", n.y + 35);
+  sub.setAttribute("class", "node-sub");
+  sub.textContent = n.file;
+  g.appendChild(sub);
+  gNodes.appendChild(g);
+});
+
+// ============================================================
+// Interaction
+// ============================================================
+function activateLog(i) {
+  document.querySelectorAll(".logline").forEach(el => el.classList.remove("active"));
+  document.querySelectorAll(".node-rect").forEach(el => el.classList.remove("active"));
+  document.querySelectorAll(".edge").forEach(el => el.classList.remove("active"));
+
+  const row = LOGS[i];
+  const lineEl = document.querySelector(`.logline[data-idx="${i}"]`);
+  if (lineEl) lineEl.classList.add("active");
+  const nodeId = LOG_TO_NODE[row.fn];
+  if (!nodeId) return;
+  const rect = document.querySelector(`g[data-id="${nodeId}"] .node-rect`);
+  if (rect) rect.classList.add("active");
+  // Highlight incoming edges
+  document.querySelectorAll(`.edge[data-to="${nodeId}"]`).forEach(e => e.classList.add("active"));
+}
+
+// Auto-play: walk through the log
+let auto = 0;
+const total = LOGS.length;
+function step() {
+  activateLog(auto);
+  auto = (auto + 1) % total;
+}
+step();
+const autoTimer = setInterval(step, 1700);
+document.addEventListener("click", () => { clearInterval(autoTimer); }, { once: true });
+</script>
+</body>
+</html>
